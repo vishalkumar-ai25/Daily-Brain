@@ -238,6 +238,9 @@ with tab_ask:
 
         elif do_rag:
             with st.spinner("Retrieving context & generating grounded answer..."):
+                import importlib
+                import retrieval.rag
+                importlib.reload(retrieval.rag)
                 from retrieval.rag import answer_question
                 result = answer_question(search_query)
             
