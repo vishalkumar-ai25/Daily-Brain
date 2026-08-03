@@ -115,18 +115,26 @@ def call_llm(prompt: str) -> str:
 
 
 def _call_ollama(prompt: str) -> str:
-    """Call a local Ollama model. Install Ollama from https://ollama.ai"""
+    """Call an Ollama model instance (local or via SSH tunnel)."""
+    url = f"{OLLAMA_HOST}/api/generate"
     try:
         import requests
         response = requests.post(
-            "http://localhost:11434/api/generate",
+            url,
             json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
             timeout=120,
         )
         response.raise_for_status()
         return response.json()["response"].strip()
     except Exception as e:
-        return f"[Ollama error: {e}]\nMake sure Ollama is running: `ollama serve`"
+        return (
+            f"❌ **Ollama Connection Error:** Could not connect to `{OLLAMA_HOST}`.\n\n"
+            f"**To connect your Mac to your GPU Server (`172.16.203.23`), run this in a terminal on your Mac:**\n"
+            f"```bash\n"
+            f"ssh -L 11434:localhost:11434 24je093024je0930@172.16.203.23\n"
+            f"```\n\n"
+            f"*Error detail: {e}*"
+        )
 
 
 def _call_gemini(prompt: str) -> str:
