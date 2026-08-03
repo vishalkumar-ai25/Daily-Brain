@@ -60,7 +60,7 @@ def get_model() -> SentenceTransformer:
 # ── Chroma client ─────────────────────────────────────────────────────────────
 CHROMA_DIR = Path(__file__).parent.parent / "chroma_db"
 
-_client: chromadb.PersistentClient | None = None
+_client = None
 _collection = None
 
 

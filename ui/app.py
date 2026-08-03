@@ -139,21 +139,22 @@ with tab_add:
         )
 
     if raw_text and st.button("💾 Save to Daily Brain", type="primary"):
-        with st.spinner("Cleaning and chunking..."):
+        with st.spinner("Cleaning, chunking, and embedding..."):
             cleaned = clean_text(raw_text)
             chunks = chunk_text(cleaned)
             entry_id = save_entry(source_type, raw_text, cleaned, source_url)
             save_chunks(entry_id, chunks)
+            
+            # Generate embeddings and store in Chroma DB
+            from embeddings.embed import add_chunks_for_entry
+            add_chunks_for_entry(entry_id=entry_id, chunks=chunks)
 
-        st.success(f"✅ Saved! Entry #{entry_id} — {len(chunks)} chunks created")
-        st.info(
-            f"**Next steps (Layer 1, Month 3):** run the embedding step to turn these "
-            f"chunks into vectors so they become searchable."
-        )
+        st.success(f"✅ Saved & Embedded! Entry #{entry_id} — {len(chunks)} chunks indexed.")
 
         with st.expander("View chunks"):
             for i, c in enumerate(chunks):
-                st.text(f"Chunk {i+1} ({len(c.split())} words): {c[:120]}...")
+                st.markdown(f"**Chunk {i+1}** ({len(c.split())} words):")
+                st.text(c)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,7 +165,7 @@ with tab_browse:
 
     conn = get_connection()
     entries = conn.execute(
-        "SELECT id, date_added, source_type, source_url, cleaned_text FROM entries ORDER BY date_added DESC"
+        "SELECT id, date_added, source_type, source_url, raw_text, cleaned_text FROM entries ORDER BY date_added DESC"
     ).fetchall()
     conn.close()
 
@@ -176,13 +177,32 @@ with tab_browse:
             badge = {"article": "📰", "paper": "📄", "note": "📝", "screenshot": "🖼️"}.get(
                 entry["source_type"], "📌"
             )
-            text_preview = (entry["cleaned_text"] or "")[:200]
-            url_str = f"\n🔗 {entry['source_url']}" if entry["source_url"] else ""
+            
+            # Use first line or first 80 chars as summary header
+            first_line = (entry["cleaned_text"] or "").strip().split("\n")[0][:80]
+            header_title = f"{badge} Entry #{entry['id']} — {date_str} — {first_line}..."
 
-            with st.expander(
-                f"{badge} Entry #{entry['id']} — {date_str} — {entry['source_type']}{url_str}"
-            ):
-                st.write(text_preview + ("..." if len(entry["cleaned_text"] or "") > 200 else ""))
+            with st.expander(header_title):
+                if entry['source_url']:
+                    st.markdown(f"🔗 **Source URL:** [{entry['source_url']}]({entry['source_url']})")
+                
+                st.markdown(f"**Type:** `{entry['source_type']}` | **Date Added:** `{date_str}`")
+                st.divider()
+                st.markdown("### Full Content")
+                st.markdown(entry["cleaned_text"] or "*No cleaned text*")
+                
+                # Fetch chunks for this entry
+                conn = get_connection()
+                chunks = conn.execute(
+                    "SELECT chunk_text FROM chunks WHERE entry_id = ?", (entry["id"],)
+                ).fetchall()
+                conn.close()
+                
+                if chunks:
+                    with st.expander(f"📦 View {len(chunks)} text chunks"):
+                        for i, chk in enumerate(chunks):
+                            st.caption(f"Chunk {i+1}:")
+                            st.code(chk["chunk_text"], language="text")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
