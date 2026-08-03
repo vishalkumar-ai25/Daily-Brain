@@ -210,26 +210,49 @@ with tab_browse:
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_ask:
     st.header("Ask Your Knowledge Base")
-    st.info(
-        "🔜 **Coming in Q2 (Month 4-6):** Once you've built `retrieval/rag.py` and "
-        "embedded your chunks, you'll be able to ask questions and get answers "
-        "grounded in everything you've read."
-    )
+    st.caption("Search vector embeddings or get AI answers grounded in your notes")
 
-    question = st.text_input("Ask a question...", disabled=True, placeholder="What is attention in transformers?")
-    if st.button("Ask", disabled=True):
-        pass
+    search_query = st.text_input("Ask a question or search concepts...", placeholder="e.g. How does merge sort count inversions?")
+    
+    col_search, col_rag = st.columns(2)
+    
+    with col_search:
+        do_search = st.button("🔍 Vector Search (Semantic)", type="secondary")
+    with col_rag:
+        do_rag = st.button("💬 Ask LLM (Full RAG)", type="primary")
 
-    with st.expander("📖 How RAG works (read this while you build it)"):
+    if search_query:
+        if do_search:
+            with st.spinner("Embedding query & searching Chroma DB..."):
+                from embeddings.embed import query_similar
+                results = query_similar(search_query, top_k=5)
+            
+            if not results:
+                st.warning("No matching vector chunks found.")
+            else:
+                st.subheader("Top Matching Chunks")
+                for i, r in enumerate(results):
+                    similarity_pct = max(0, int((1 - r["distance"]) * 100))
+                    st.markdown(f"**Result {i+1}** (Entry #{r['entry_id']} — Relevancy ~{similarity_pct}% / Distance `{r['distance']:.4f}`) :")
+                    st.code(r["chunk_text"], language="text")
+
+        elif do_rag:
+            with st.spinner("Retrieving context & generating grounded answer..."):
+                from retrieval.rag import answer_question
+                result = answer_question(search_query)
+            
+            st.subheader("🤖 Answer")
+            st.markdown(result["answer"])
+            if result["sources"]:
+                st.info(f"**Sources used:** Entries {result['sources']}")
+
+    with st.expander("📖 How RAG & Semantic Search work"):
         st.markdown("""
-**Retrieval-Augmented Generation (RAG)** works in 4 steps:
+**1. Vector Search (Semantic Search)**
+Converts your text into a 384-dimensional dense vector using `all-MiniLM-L6-v2`. It compares your query vector against stored chunk vectors in Chroma DB using **Cosine Distance**. Lower distance = higher semantic similarity.
 
-1. **Embed your question** → convert it to a vector using the same model that embedded your chunks
-2. **Similarity search** → find the top-K chunks whose vectors are closest to your question vector (cosine similarity)
-3. **Build a grounded prompt** → give the LLM your question + those chunks as context, with instructions to *only use the provided context*
-4. **Generate + cite** → the LLM answers, and you show which entries it drew from
-
-The grounding instruction is critical — without it, the LLM just answers from its training data and ignores your notes entirely.
+**2. Full RAG (Retrieval-Augmented Generation)**
+Retrieves top matching chunks, embeds them into a strict prompt instruction ("Answer ONLY using the provided context"), and queries the LLM (Ollama/Gemini) to produce a grounded response with zero hallucinations.
         """)
 
 
