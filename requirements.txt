@@ -1,0 +1,36 @@
+# Dependencies for Daily Brain
+# Install: pip install -r requirements.txt
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+streamlit>=1.35.0          # UI
+
+# ── Database ──────────────────────────────────────────────────────────────────
+# SQLite is built into Python — no extra install needed
+
+# ── Ingestion ─────────────────────────────────────────────────────────────────
+trafilatura>=1.9.0         # URL → main text extraction (scraper)
+requests>=2.31.0           # HTTP requests
+
+# ── NLP / Embeddings ──────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0   # local embedding model (MiniLM etc.)
+torch>=2.3.0                   # required by sentence-transformers
+
+# ── Vector Store ──────────────────────────────────────────────────────────────
+chromadb>=0.5.0            # local vector database with persistence
+
+# ── LLM (add when you reach Layer 2) ─────────────────────────────────────────
+# Uncomment when you start Layer 2 (RAG):
+# ollama                   # local LLM runner (install separately from ollama.ai)
+# openai>=1.0.0            # OR use OpenAI-compatible API (GPT / Gemini via openai SDK)
+# google-generativeai      # OR use Gemini directly
+
+# ── Agent orchestration (add when you reach Layer 3) ─────────────────────────
+# langgraph>=0.1.0         # optional — you can also roll a custom Python loop
+# langchain-core>=0.2.0
+
+# ── Vision / OCR (add when you reach Layer 4) ─────────────────────────────────
+# pytesseract>=0.3.10      # Python wrapper for Tesseract OCR
+# Pillow>=10.0.0           # image handling
+
+# ── Dev / Utilities ───────────────────────────────────────────────────────────
+python-dotenv>=1.0.0       # load .env file for API keys
