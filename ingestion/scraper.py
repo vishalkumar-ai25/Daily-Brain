@@ -20,11 +20,13 @@ Usage
 
 import trafilatura
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 
 def fetch_url(url: str) -> str:
     """
-    Fetch a URL and extract the main article text.
+    Fetch a URL and extract the main article text along with diagrams and images.
 
     Parameters
     ----------
@@ -34,29 +36,68 @@ def fetch_url(url: str) -> str:
     Returns
     -------
     str
-        The extracted main text, or an empty string if extraction fails.
-
-    Raises
-    ------
-    ValueError
-        If the URL is empty or obviously malformed.
+        The extracted main text with markdown image links for diagrams.
     """
     if not url or not url.startswith(("http://", "https://")):
         raise ValueError(f"Invalid URL: {url!r}. Must start with http:// or https://")
 
-    # Download the page
-    downloaded = trafilatura.fetch_url(url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        downloaded = resp.text
+    except Exception as e:
+        print(f"⚠️  Direct request failed for {url}: {e}, falling back to trafilatura download")
+        downloaded = trafilatura.fetch_url(url)
+
     if not downloaded:
         print(f"⚠️  Could not download: {url}")
         return ""
 
-    # Extract main content
+    # Extract main content text
     text = trafilatura.extract(
         downloaded,
         include_comments=False,      # skip comment sections
         include_tables=True,         # keep tables (useful for papers/articles)
         no_fallback=False,           # try fallback extraction if main heuristic fails
-    )
+    ) or ""
+
+    # Extract diagrams and content images via BeautifulSoup
+    try:
+        soup = BeautifulSoup(downloaded, "html.parser")
+        article = (
+            soup.find("article")
+            or soup.find("main")
+            or soup.find("div", class_=lambda c: c and any(k in c.lower() for k in ["content", "article", "post", "entry"]))
+            or soup
+        )
+
+        images_found: list[str] = []
+        for img in article.find_all("img"):
+            src = img.get("src") or img.get("data-src") or (img.get("srcset", "").split()[0] if img.get("srcset") else None)
+            if not src:
+                continue
+            alt = img.get("alt", "").strip() or img.get("title", "").strip() or "Article Diagram"
+
+            # Filter out UI icons, site logos, tracking buttons, location SVGs
+            src_lower = src.lower()
+            alt_lower = alt.lower()
+            if any(ignore in src_lower or ignore in alt_lower for ignore in [".svg", "logo", "icon", "location", "arrow", "avatar", "profile", "button", "ad-", "footer"]):
+                continue
+
+            if not src.startswith("http"):
+                src = urljoin(url, src)
+
+            md_img = f"![Diagram: {alt}]({src})"
+            if md_img not in images_found:
+                images_found.append(md_img)
+
+        if images_found:
+            text += "\n\n### 🖼️ Article Diagrams & Visuals\n" + "\n\n".join(images_found)
+    except Exception as err:
+        print(f"⚠️  Image tag extraction warning: {err}")
 
     if not text:
         print(f"⚠️  Extraction returned empty text for: {url}")

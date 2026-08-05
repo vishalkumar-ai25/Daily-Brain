@@ -9,11 +9,13 @@ streamlit>=1.35.0          # UI
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 trafilatura>=1.9.0         # URL → main text extraction (scraper)
+beautifulsoup4>=4.12.0      # HTML parser for content images and diagrams
 requests>=2.31.0           # HTTP requests
 
 # ── NLP / Embeddings ──────────────────────────────────────────────────────────
 sentence-transformers>=2.7.0   # local embedding model (MiniLM etc.)
 torch>=2.3.0                   # required by sentence-transformers
+torchvision>=0.18.0            # image transforms for multimodal models
 
 # ── Vector Store ──────────────────────────────────────────────────────────────
 chromadb>=0.5.0            # local vector database with persistence
