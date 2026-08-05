@@ -101,6 +101,13 @@ tab_add, tab_browse, tab_ask, tab_agents, tab_vision = st.tabs([
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1: Add Entry
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Initialize session state keys for persisting fetched article across reruns
+if "fetched_text" not in st.session_state:
+    st.session_state["fetched_text"] = ""
+if "fetched_url" not in st.session_state:
+    st.session_state["fetched_url"] = ""
+
 with tab_add:
     st.header("Add Today's Entry")
     st.caption("Feed Daily Brain with something you actually read today (~10 min/day habit)")
@@ -122,16 +129,34 @@ with tab_add:
 
     if input_mode == "🌐 URL (fetch article)":
         url_input = st.text_input("Article URL", placeholder="https://...")
+
         if st.button("Fetch Article", type="primary") and url_input:
             with st.spinner("Fetching and extracting article text..."):
-                raw_text = fetch_url(url_input)
-                source_url = url_input
-            if raw_text:
-                st.success(f"Fetched {len(raw_text.split())} words")
-                st.text_area("Preview (first 500 chars)", raw_text[:500], height=120, disabled=True)
+                fetched = fetch_url(url_input)
+            if fetched:
+                # Persist in session state so it survives the next rerun
+                st.session_state["fetched_text"] = fetched
+                st.session_state["fetched_url"] = url_input
+                st.success(f"✅ Fetched {len(fetched.split())} words — click 💾 Save to Daily Brain below")
             else:
                 st.error("Could not extract text from this URL. Try pasting manually.")
+
+        # Always restore from session state (survives button-click reruns)
+        raw_text = st.session_state["fetched_text"]
+        source_url = st.session_state["fetched_url"] or None
+
+        if raw_text:
+            word_count = len(raw_text.split())
+            st.info(f"📄 **Article in memory:** {word_count} words from `{source_url}`")
+            with st.expander("📖 Preview article text"):
+                st.text_area("Full article preview", raw_text, height=300, disabled=True)
+        else:
+            st.caption("Enter a URL above and click Fetch Article.")
+
     else:
+        # Switching to paste mode — clear any previously fetched URL article
+        st.session_state["fetched_text"] = ""
+        st.session_state["fetched_url"] = ""
         raw_text = st.text_area(
             "Paste your text here",
             height=300,
@@ -148,6 +173,10 @@ with tab_add:
             # Generate embeddings and store in Chroma DB
             from embeddings.embed import add_chunks_for_entry
             add_chunks_for_entry(entry_id=entry_id, chunks=chunks)
+
+        # Clear session state after successful save
+        st.session_state["fetched_text"] = ""
+        st.session_state["fetched_url"] = ""
 
         st.success(f"✅ Saved & Embedded! Entry #{entry_id} — {len(chunks)} chunks indexed.")
 
