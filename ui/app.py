@@ -83,8 +83,8 @@ with st.sidebar:
 
     st.caption("**Layers built so far:**")
     st.success("✅ Layer 1: Ingestion + NLP")
-    st.info("🔜 Layer 2: RAG (Q2)")
-    st.info("🔜 Layer 3: Agents (Q3)")
+    st.success("✅ Layer 2: RAG (Q2)")
+    st.success("✅ Layer 3: Agents (Q3)")
     st.info("🔜 Layer 4: Vision (Q4)")
 
 
@@ -302,23 +302,154 @@ Retrieves top matching chunks, embeds them into a strict prompt instruction ("An
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 4: Agents — Layer 3 stub
+# TAB 4: Agents — Layer 3 (FULLY IMPLEMENTED)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Session state: multi-step Q&A agent instance + conversation history
+if "msqa_agent" not in st.session_state:
+    from agents.multistep_qa import MultiStepQA
+    st.session_state["msqa_agent"] = MultiStepQA()
+if "msqa_history_display" not in st.session_state:
+    st.session_state["msqa_history_display"] = []  # list of {"role", "content"}
+
 with tab_agents:
-    st.header("AI Agents")
-    st.info("🔜 **Coming in Q3 (Month 7-9):** Weekly summaries, contradiction finding, and multi-step Q&A.")
+    st.header("🤖 AI Agents")
+    st.caption("Three agentic workflows powered by your knowledge base")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    agent_tab1, agent_tab2, agent_tab3 = st.tabs([
+        "📅 Weekly Summary",
+        "⚡ Contradiction Finder",
+        "💬 Multi-step Q&A",
+    ])
+
+    # ── Agent 1: Weekly Summary ───────────────────────────────────────────────
+    with agent_tab1:
         st.subheader("📅 Weekly Summary")
-        st.caption("Auto-summarize everything you read this week")
-        st.button("Generate Summary", disabled=True)
+        st.markdown(
+            "Auto-summarize **everything you read** in a given time window. "
+            "Uses date-range retrieval (not similarity search) — a different agentic retrieval pattern."
+        )
+        st.divider()
 
-    with col2:
+        days = st.slider("Look back how many days?", min_value=1, max_value=90, value=7, step=1)
+
+        # Show entry count for that window
+        conn = get_connection()
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        count_in_window = conn.execute(
+            "SELECT COUNT(*) FROM entries WHERE date_added >= ?", (cutoff,)
+        ).fetchone()[0]
+        conn.close()
+
+        if count_in_window == 0:
+            st.warning(f"No entries found in the last {days} days. Try increasing the range or add more entries.")
+        else:
+            st.info(f"📚 **{count_in_window} entries** found in the last {days} days.")
+
+        if st.button("✨ Generate Summary", type="primary", disabled=(count_in_window == 0)):
+            with st.spinner(f"Reading {count_in_window} entries and summarising..."):
+                from agents.weekly_summary import generate_weekly_summary
+                summary = generate_weekly_summary(days=days)
+
+            st.success("Summary ready!")
+            st.divider()
+            st.markdown(summary)
+
+            # Download button
+            st.download_button(
+                "📥 Download Summary",
+                data=summary,
+                file_name=f"daily_brain_summary_{days}d.md",
+                mime="text/markdown",
+            )
+
+    # ── Agent 2: Contradiction Finder ─────────────────────────────────────────
+    with agent_tab2:
         st.subheader("⚡ Contradiction Finder")
-        st.caption("Find conflicting claims across your entries")
-        topic = st.text_input("Topic to investigate", disabled=True, placeholder="e.g., transformer attention")
-        st.button("Find Contradictions", disabled=True)
+        st.markdown(
+            "Finds **conflicting or agreeing claims** across your entries on the same topic. "
+            "Retrieves the top-K relevant chunks, groups them by source, "
+            "then asks the LLM to compare them for contradictions and nuances."
+        )
+        st.divider()
+
+        topic_input = st.text_input(
+            "Topic to investigate",
+            placeholder="e.g., merge sort, transformer attention, graph traversal",
+            key="contradiction_topic",
+        )
+        top_k_cf = st.slider("Chunks to compare", min_value=4, max_value=20, value=10, step=2)
+
+        if st.button("🔍 Find Contradictions", type="primary", disabled=not topic_input):
+            with st.spinner(f"Retrieving {top_k_cf} chunks on '{topic_input}' and analysing..."):
+                from agents.contradiction_finder import find_contradictions
+                result = find_contradictions(topic_input, top_k=top_k_cf)
+
+            st.success("Analysis complete!")
+            st.divider()
+            st.markdown(result)
+
+            st.download_button(
+                "📥 Download Analysis",
+                data=result,
+                file_name=f"contradiction_{topic_input[:30].replace(' ', '_')}.md",
+                mime="text/markdown",
+            )
+
+    # ── Agent 3: Multi-step Q&A ───────────────────────────────────────────────
+    with agent_tab3:
+        st.subheader("💬 Multi-step Q&A")
+        st.markdown(
+            "A **conversational agent** that remembers the conversation. "
+            "Ask a follow-up question and it will use both fresh context AND your prior conversation to answer."
+        )
+
+        agent: "MultiStepQA" = st.session_state["msqa_agent"]
+
+        col_meta1, col_meta2, col_meta3 = st.columns(3)
+        col_meta1.metric("Turns this session", agent.turn_count)
+        col_meta2.metric("Max history kept", agent.max_history_turns)
+        if col_meta3.button("🗑️ Reset Conversation", type="secondary"):
+            agent.reset()
+            st.session_state["msqa_history_display"] = []
+            st.rerun()
+
+        st.divider()
+
+        # Display conversation history
+        history_display = st.session_state["msqa_history_display"]
+        if not history_display:
+            st.caption("No conversation yet. Ask your first question below.")
+        else:
+            for turn in history_display:
+                if turn["role"] == "user":
+                    with st.chat_message("user"):
+                        st.markdown(turn["content"])
+                else:
+                    with st.chat_message("assistant"):
+                        st.markdown(turn["content"])
+                        if turn.get("sources"):
+                            st.caption(f"📚 Sources: Entries {turn['sources']}")
+
+        # Input box at the bottom
+        msqa_question = st.chat_input("Ask a follow-up question...", key="msqa_input")
+
+        if msqa_question:
+            # Add user message to display immediately
+            st.session_state["msqa_history_display"].append({
+                "role": "user",
+                "content": msqa_question,
+            })
+            with st.spinner("Thinking..."):
+                result = agent.ask(msqa_question)
+
+            st.session_state["msqa_history_display"].append({
+                "role": "assistant",
+                "content": result["answer"],
+                "sources": result["sources"],
+            })
+            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
