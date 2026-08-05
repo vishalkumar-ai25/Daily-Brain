@@ -36,6 +36,9 @@ Usage
 """
 
 import os
+import re
+import sqlite3
+from pathlib import Path
 from dotenv import load_dotenv
 from embeddings.embed import query_similar
 
@@ -48,6 +51,43 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 TOP_K = 5  # how many chunks to retrieve
+
+# Regex to match markdown images: ![alt text](url)
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+
+DB_PATH = Path(__file__).parent.parent / "db" / "daily_brain.sqlite"
+
+
+def _extract_images_from_entries(entry_ids: list) -> list:
+    """
+    Fetch raw_text from the given entry IDs and extract all markdown image links.
+    Returns a list of dicts: {"alt": str, "url": str, "entry_id": int}
+    """
+    if not entry_ids:
+        return []
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        placeholders = ",".join("?" * len(entry_ids))
+        rows = conn.execute(
+            f"SELECT id, raw_text FROM entries WHERE id IN ({placeholders})",
+            entry_ids,
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return []
+
+    images = []
+    seen_urls: set = set()
+    for row in rows:
+        entry_id, raw_text = row
+        if not raw_text:
+            continue
+        for match in _IMAGE_RE.finditer(raw_text):
+            alt, url = match.group(1), match.group(2)
+            if url not in seen_urls:
+                seen_urls.add(url)
+                images.append({"alt": alt, "url": url, "entry_id": entry_id})
+    return images
 
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
@@ -180,9 +220,10 @@ def answer_question(question: str, top_k: int = TOP_K) -> dict:
     Returns
     -------
     dict with keys:
-        "answer"   : str  — the LLM's answer
-        "sources"  : list[int]  — entry IDs used
-        "chunks"   : list[dict] — the raw retrieved chunks (for debugging)
+        "answer"  : str        — the LLM's answer
+        "sources" : list[int]  — entry IDs used
+        "chunks"  : list[dict] — the raw retrieved chunks (for debugging)
+        "images"  : list[dict] — images from source entries [{"alt", "url", "entry_id"}]
     """
     # Step 1 + 2: embed query and retrieve similar chunks
     chunks = query_similar(question, top_k=top_k)
@@ -192,6 +233,7 @@ def answer_question(question: str, top_k: int = TOP_K) -> dict:
             "answer": "No entries in your knowledge base yet. Add some entries first!",
             "sources": [],
             "chunks": [],
+            "images": [],
         }
 
     # Step 3: build grounded prompt
@@ -203,10 +245,14 @@ def answer_question(question: str, top_k: int = TOP_K) -> dict:
     # Step 5: collect source entry IDs for citation
     source_entry_ids = list({c["entry_id"] for c in chunks})
 
+    # Step 6: extract images/diagrams from all source entries for visual context
+    images = _extract_images_from_entries(source_entry_ids)
+
     return {
         "answer": answer,
         "sources": source_entry_ids,
         "chunks": chunks,
+        "images": images,
     }
 
 

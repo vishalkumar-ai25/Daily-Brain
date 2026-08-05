@@ -278,6 +278,19 @@ with tab_ask:
             if result["sources"]:
                 st.info(f"**Sources used:** Entries {result['sources']}")
 
+            # ── Show diagrams & images from source entries ──────────────────
+            images = result.get("images", [])
+            if images:
+                st.divider()
+                st.subheader(f"🖼️ Diagrams & Images from Source ({len(images)} found)")
+                st.caption("These are the original diagrams from the article(s) used to answer your question.")
+                for img in images:
+                    try:
+                        caption = img["alt"] if img["alt"] else f"Image from Entry #{img['entry_id']}"
+                        st.image(img["url"], caption=caption, use_container_width=True)
+                    except Exception as img_err:
+                        st.warning(f"Could not load image: `{img['url'][:80]}...` — {img_err}")
+
     with st.expander("📖 How RAG & Semantic Search work"):
         st.markdown("""
 **1. Vector Search (Semantic Search)**
